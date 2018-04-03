@@ -1,6 +1,6 @@
 /**
  * 数据模版生成
- * creation-time : 2018-04-03 12:52:56 PM
+ * creation-time : 2018-04-03 19:30:42 PM
  */
 ;(function( global, factory ){
 	global[ 'global' ] = global;
@@ -19,8 +19,9 @@
 	 * 构造函数
 	 */
 	function Mode(mode) {
-		this.mode = mode;
-		this.attrs = this.getValues(this.mode) || [];
+		this.mode 		= mode;
+		this.attrs 		= this.getValues(this.mode) || [];
+		this._storage_ 	= {};
 	};
 	var fxReName_s 		= 'this.__run_func__("$1",$2';
 	var varReName_s 	= 'this._._$2$3';
@@ -43,8 +44,8 @@
 	 * {?(表达式)?} == $1 {(var)} = $2 {(var)(.length)} = $2$3
 	 * @type {RegExp}
 	 */
-	var regExp 			=/\{(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*(?:([\w-#$]+)([^\{\}]*))\s*)\}/gi
-	// var regExp 			= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
+	var regExp 			= /\{(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*(?:([\w-#$]+)([^\{\}]*))\s*)\}/gi;
+	// var regExp 		= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
 	// ? () {} | : []
 	var FILTER_R 		= new RegExp('(\\' + filter + ')', 'g');
 	/**
@@ -79,7 +80,6 @@
 		this._.$index = index >> 0;
 		for (var i = vars.length; i--;) {
 			key = vars[i].replace(regExp, $2);
-
 			if (key === 'this') {
 				this._['_this'] = data;
 			} else {
@@ -204,29 +204,42 @@
 	Mode.prototype.suffix = function(val) {
 		return this.toString((val + '').match(regExpSuffix_));
 	};
+	/**
+	 * 获取链式对象调用的方法对象
+	 * @param  {String} varline  e.g :a.b.c.d.e
+	 * @return {Function}         最终的e()
+	 */
 	Mode.prototype.__pick_var_line_ = function( varline ){
-		var local = this._storage_ || (this._storage_ = {});
-		var vs;
-		if( vs = local[ varline ] );
-		else{
-			var rank = varline.split( '.' ), r, box = this;
-			for( var i = 0, l = rank.length; i < l; i++ ){
-				r = rank[ i ];
-				if( ( box = box[ r ] || window[ r ] || box ) ) {
+		var local = this._storage_;
+		if( ! local[ varline ] ) {
+			var vs;
+			var rank = varline.split( '.' ), box;
+			var first = rank[ 0 ];
+			if( first in this ) box = this;// 先确认入口, 是模板对象还是全局对象
+			else box = global;
+			var i = 0, l = rank.length;
+			for( ; i < l; i++ ){
+				if( vs = box[ rank[ i ] ] ) {
+					if( i != l - 1  ) box = vs;// 存储链式对象上线文
 					continue;
 				}
 			}
-			vs = box;
+			local[ varline ] = {
+				fx 		: vs,
+				parent 	: box// 获取上层对象
+			};// 缓存数据关联
 		}
-		return vs;
+		return local[ varline ];
 	}
+	/**
+	 * 执行模板内的函数调用
+	 */
 	Mode.prototype.__run_func__ = function( fx ) {
-		fx = this.__pick_var_line_( fx );
-		if( fx instanceof Function ) {
+		var setting = this.__pick_var_line_( fx );
+		if( setting.fx instanceof Function ) {
 			var args = Array.apply( null, arguments );
 			args.shift();
-			// console.log(fx.apply( this, args ));
-			return fx.apply( this, args );
+			return setting.fx.apply( setting.parent, args );
 		};
 	};
 	module.exports = Mode;
