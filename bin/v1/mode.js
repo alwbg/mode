@@ -1,6 +1,6 @@
 /**
  * 数据模版生成
- * creation-time : 2017-09-09 12:44:32 PM
+ * creation-time : 2018-04-03 12:52:56 PM
  */
 ;(function( global, factory ){
 	global[ 'global' ] = global;
@@ -12,7 +12,7 @@
 	} else {
 		var MODULE = { exports : {} };
 		factory( new Function, MODULE.exports, MODULE );
-		global['Mode'] = MODULE.exports;
+		global['mode'] = MODULE.exports;
 	}
 }( this, function( require, exports, module ) {
 	/**
@@ -22,7 +22,7 @@
 		this.mode = mode;
 		this.attrs = this.getValues(this.mode) || [];
 	};
-	var fxReName_s 		= 'this.__run_func__(this.$1||$1,$2';
+	var fxReName_s 		= 'this.__run_func__("$1",$2';
 	var varReName_s 	= 'this._._$2$3';
 	var $1 				= '$1';
 	var $2 				= '$2';
@@ -43,7 +43,8 @@
 	 * {?(表达式)?} == $1 {(var)} = $2 {(var)(.length)} = $2$3
 	 * @type {RegExp}
 	 */
-	var regExp 			= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
+	var regExp 			=/\{(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*(?:([\w-#$]+)([^\{\}]*))\s*)\}/gi
+	// var regExp 			= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
 	// ? () {} | : []
 	var FILTER_R 		= new RegExp('(\\' + filter + ')', 'g');
 	/**
@@ -124,6 +125,7 @@
 	Mode.prototype.one = function(vars, data, fx, index) {
 		var key, vl, val;
 		this.val = this.mode;
+		if( typeof data == 'string' ) data = { $value : data };
 		for (var i = 0, length = vars.length; i < length; i++) {
 			key = vars[i].replace(regExp, $1$2);
 			val = RegExp.$2;
@@ -202,10 +204,28 @@
 	Mode.prototype.suffix = function(val) {
 		return this.toString((val + '').match(regExpSuffix_));
 	};
+	Mode.prototype.__pick_var_line_ = function( varline ){
+		var local = this._storage_ || (this._storage_ = {});
+		var vs;
+		if( vs = local[ varline ] );
+		else{
+			var rank = varline.split( '.' ), r, box = this;
+			for( var i = 0, l = rank.length; i < l; i++ ){
+				r = rank[ i ];
+				if( ( box = box[ r ] || window[ r ] || box ) ) {
+					continue;
+				}
+			}
+			vs = box;
+		}
+		return vs;
+	}
 	Mode.prototype.__run_func__ = function( fx ) {
+		fx = this.__pick_var_line_( fx );
 		if( fx instanceof Function ) {
 			var args = Array.apply( null, arguments );
 			args.shift();
+			// console.log(fx.apply( this, args ));
 			return fx.apply( this, args );
 		};
 	};
