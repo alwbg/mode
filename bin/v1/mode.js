@@ -1,6 +1,6 @@
 /**
  * 数据模版生成
- * creation-time : 2018-04-03 19:30:42 PM
+ * creation-time : 2018-04-12 11:32:12 AM
  */
 ;(function( global, factory ){
 	global[ 'global' ] = global;
@@ -10,9 +10,17 @@
 		//AMD CMD
 		define( 'mode', factory );
 	} else {
+		var funcName = 'require';
+		if( funcName && !global[ funcName ] ) {
+			global[ funcName ] = function( id ) {
+				return global[ id ];
+			};
+		};
 		var MODULE = { exports : {} };
-		factory( new Function, MODULE.exports, MODULE );
-		global['mode'] = MODULE.exports;
+		factory( global[ funcName ] || function( id ) {
+			alert( '需要实现 require(),加载模块:"' + id + '"' );
+		}, MODULE.exports, MODULE );
+		global[ 'mode' ] = MODULE.exports;
 	}
 }( this, function( require, exports, module ) {
 	/**
@@ -23,29 +31,34 @@
 		this.attrs 		= this.getValues(this.mode) || [];
 		this._storage_ 	= {};
 	};
-	var fxReName_s 		= 'this.__run_func__("$1",$2';
-	var varReName_s 	= 'this._._$2$3';
+	var SPACE 			= '';
 	var $1 				= '$1';
 	var $2 				= '$2';
-	var $1$2 			= '$1$2';
-	var filter 			= ['$', '?', '(', ')', '<', '>', '{', '}', '[', ']', '|', ':', '*', '+', '.', '\\'].join('|\\');
+	var $more 			= '$1$2$3';
+	var RETURN 			= 'return ';
+	var STR_DOWN_LINE 	= '_';
+	var STR_DEFAULT 	= 'default';
 	//匹配"xxx()"的xxx
-	var fxName_r 		= /([^\(]+)\(([^\)]*\))/;
-	var CHECK_NAME 		= /(.*)(?:\.(\w{1,10}))$/;
+	var R_FUNC_ARGS 	= /([^\(+\*]+)\(([^\)]*\))/;
+	var S_FUNX_RELOAD 	= 'this.__run_func__("$1",$2';
+	var S_VAR_RENAME 	= 'this._._$2$3';
+
+	var R_SHOW_SUFFIX 	= /(.*)(?:\.(\w{1,10}))$/;
+
 	//非单字符 双字节字符
-	var gt1Byte_r 		= /(?:([^\x00-\xff])\t)|([^\x00-\xff])/ig;
+	var R_GET1BYTE 		= /(?:([^\x00-\xff])\t)|([^\x00-\xff])/ig;
 	var val_show_concat = '...';
 	var VSC_LENGTH 		= val_show_concat.length;
-	//var regExpSuffix 	= /(.{6})$/ig; ///(?:.{2}\.([^\.\W]{1,7})|.{4})$/ig;
 
-	//var regExpSuffix_ 	= /\.(\w{1,9})$/ig;
+	var filter 			= ['$', '?', '(', ')', '<', '>', '{', '}', '[', ']', '|', ':', '*', '+', '.', '\\'].join('|\\');
 	/**
 	 * 匹配对象
 	 * {?(表达式)?} == $1 {(var)} = $2 {(var)(.length)} = $2$3
 	 * @type {RegExp}
 	 */
-	var regExp 			= /\{(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*(?:([\w-#$]+)([^\{\}]*))\s*)\}/gi;
-	// var regExp 		= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
+	var R_PICK_BLOCK 	= /(?:(?!\\)\{)(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*((?:(?![^\\])[\}\{])*[\w-#$]*)([\.\w-#$]*)\s*)(?:(?!\\)\})/gi;
+	//(?!\\)\{(?:\?\s*((?:(?!\?\}).)*)\s*\?|\s*(?:([\w-#$]+)([^\{\}]*))\s*)(?!\\)\}/gi;
+	// var R_PICK_BLOCK 		= /\{(?:\?\s*([^\?]*)\s*\?|\s*(?:([^\?\{\}\(\)\.]*)([^\?\{\}\(\)]*))\s*)\}/ig;
 	// ? () {} | : []
 	var FILTER_R 		= new RegExp('(\\' + filter + ')', 'g');
 	/**
@@ -54,39 +67,61 @@
 	 * @return {String}     输出参数值
 	 */
 	Mode.prototype.echo = function(val) {
+		console && console.log(val);
 		return val;
 	};
 	/**
 	 * 
 	 */
 	Mode.prototype.toRegExp = function(str) {
-		return new RegExp(str.replace(FILTER_R, '\\$1'), 'g');
+		var REs = this._r_s_ || (this._r_s_ = {});
+		return REs[ str ] || (REs[ str ] = new RegExp( str.replace(FILTER_R, '\\$1'), 'g' ) );
 	};
+	function $esc( str ) {
+		return str.replace(/\\(?=\{|\})/g, SPACE);
+	}
+
+	var real = {
+		'$index' : function(data, key, index){
+			return index >> 0;
+		},
+		'$offset' : function( data, key, index ){
+			return this.offset;
+		},
+		'this' : function(data, key, index){
+			return data;
+		},
+		'default' : function(data, key, index){
+			return data[ key ];
+		}
+	}
+	function toReal( self, data, key, index ){
+		return (real[ key ] || real[ STR_DEFAULT ]).call( self, data, key, index );
+	}
 	/**
 	 * 创建
-	 * @param  {String} source  regExp匹配的$1
-	 * @param  {String} value   regExp匹配结果
+	 * @param  {String} source  R_PICK_BLOCK匹配的$1
+	 * @param  {String} value   R_PICK_BLOCK匹配结果
 	 * @param  {Object} data    数据集
 	 * @return {Mode}           对象本身
 	 */
 	Mode.prototype.create = function(source, value, data, index) {
 		//创建对象内部临时变量
-		this._ = {};
+		var _ = this._ = {};
 		//获取模板块级内的参数集合
 		var vars = this.getValues(source);
-		source = source.replace( fxName_r, fxReName_s);
-		source = 'return ' + source.replace(regExp, varReName_s);
+		source = $esc( RETURN + source
+			.replace( R_PICK_BLOCK, S_VAR_RENAME )
+			.replace( R_FUNC_ARGS, S_FUNX_RELOAD )
+		);
+		// console.log(vars, source)
 		var key;
-		this._.$index = index >> 0;
+		var val;
 		for (var i = vars.length; i--;) {
-			key = vars[i].replace(regExp, $2);
-			if (key === 'this') {
-				this._['_this'] = data;
-			} else {
-				this._['_' + key] = data[key];
-			}
+			key = vars[ i ].replace( R_PICK_BLOCK, $2 );
+			_[ STR_DOWN_LINE + key ] = toReal( this, data, key, index );
 		}
-		this.val = this.val.replace(this.toRegExp(value), this.replaceFilter(this.eval(source)));
+		this.val = this.val.replace( this.toRegExp( value ), this.replaceFilter( this.eval( source ) ) );
 		delete this._;
 		return this;
 	};
@@ -101,11 +136,11 @@
 	Mode.prototype.getValues = function(str) {
 		if (!str) str = this.mode;
 		if (!str) return [];
-		var list = str.match(regExp) || [];
+		var list = str.match(R_PICK_BLOCK) || [];
 		var map = {},
 			key, newOrder = [];
 		for (var i = list.length; i--;) {
-			key = list[i];
+			key = list[ i ];
 			if (key in map) continue;
 			map[key] = 0;
 			newOrder.push(key);
@@ -126,20 +161,20 @@
 		var key, vl, val;
 		this.val = this.mode;
 		if( typeof data == 'string' ) data = { $value : data };
-		for (var i = 0, length = vars.length; i < length; i++) {
-			key = vars[i].replace(regExp, $1$2);
+		for ( var i = 0, length = vars.length; i < length; i++ ) {
+			key = vars[ i ].replace( R_PICK_BLOCK, $more );
 			val = RegExp.$2;
 			if ( val ) {
-				vl = val === '$index' ? index >> 0 : data[key];
-				if (/\$/.test(vl)) {
+				vl = toReal( this, data, val, index );
+				if ( /\$/.test( vl ) ) {
 					vl = this.show(vl, 1000000);
 				}
-				this.val = this.val.replace(this.toRegExp(vars[i]), vl);
+				this.val = this.val.replace( this.toRegExp( vars[ i ] ), vl );
 			} else {
-				this.create(key, vars[i], data, index);
+				this.create( key, vars[ i ], data, index );
 			}
 		}
-		if (fx instanceof Array) fx(data, this.val);
+		if (fx instanceof Array) fx( data, this.val );
 		return this;
 	};
 	/**
@@ -150,7 +185,7 @@
 	 * @return {Mode}       对象本身
 	 */
 	Mode.prototype.some = function(vars, data, fx, offset) {
-		var html = '';
+		var html = SPACE;
 		for (var i = 0, length = data.length; i < length; i++) {
 			html += this.one(vars, data[i], fx, offset + i).val;
 		}
@@ -161,26 +196,27 @@
 	 * 执行置换模板
 	 */
 	Mode.prototype.on = function(data, fx, offset) {
+		this.offset = offset >> 0;
 		var key = data instanceof Array ? 'some' : 'one';
 		var length = this.attrs.length;
-		if(length) this[key](this.attrs, data, fx, offset >> 0);
+		if( length ) this[ key ]( this.attrs, data, fx, offset >> 0 );
 
-		return (!length && this.mode) || this.val;
+		return $esc((!length && this.mode) || this.val);
 	};
 
 	Mode.prototype.replaceFilter = function(v) {
-		return String.prototype.replace.call(v || v + '', /(\{|\$)/g, function(key) {
+		return String.prototype.replace.call(v || v + SPACE, /(\{|\$)/g, function(key) {
 			return '&#' + key.charCodeAt(0) + ';';
 		});
 	};
 
 	Mode.prototype.toDouble = function(name) {
-		return name.replace(gt1Byte_r, '$2\t');
+		return name.replace(R_GET1BYTE, '$2\t');
 	};
 	Mode.prototype.show = function(val, len, isShowSuffix) {
 		val = val || '';
-		if (!isShowSuffix) {
-			if (CHECK_NAME.test(val) && RegExp.$2) {
+		if ( !isShowSuffix ) {
+			if (R_SHOW_SUFFIX.test(val) && RegExp.$2) {
 				val = RegExp.$1;
 			}
 		}
@@ -193,16 +229,13 @@
 		var half = ( ( len - VSC_LENGTH ) / 2 ) >> 0;
 		var suffix = name.substr( 0 - half );//反取参数为负值
 		name = name.substring(0, half);
-		name = (name + val_show_concat + suffix).replace(gt1Byte_r, $1);
+		name = (name + val_show_concat + suffix).replace(R_GET1BYTE, $1);
 		//name = name.replace(/\t?(\.{3})\t?/, $1);
 		return this.replaceFilter(name);
 	};
 
-	Mode.prototype.toString = function(val) {
-		return !val ? val : val.toString().substr(1);
-	};
 	Mode.prototype.suffix = function(val) {
-		return this.toString((val + '').match(regExpSuffix_));
+		return R_SHOW_SUFFIX.test( val ) ? RegExp.$2 : SPACE ;
 	};
 	/**
 	 * 获取链式对象调用的方法对象
